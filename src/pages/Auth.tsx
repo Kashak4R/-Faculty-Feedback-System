@@ -14,6 +14,7 @@ export default function Auth() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [isLogin, setIsLogin] = useState(true);
+  const [selectedRole, setSelectedRole] = useState<string>("student");
 
   useEffect(() => {
     const checkSession = async () => {
@@ -52,22 +53,51 @@ export default function Auth() {
 
   const handleAuth = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    e.stopPropagation();
+    
+    if (loading) {
+      console.log("Already processing, ignoring duplicate submit");
+      return;
+    }
+    
     setLoading(true);
+    console.log("Form submitted, isLogin:", isLogin);
 
     const formData = new FormData(e.currentTarget);
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
     const name = formData.get("name") as string;
-    const role = formData.get("role") as string;
+    // Get role from RadioGroup - use selectedRole state as fallback
+    const roleFromForm = formData.get("role") as string;
+    const role = roleFromForm || selectedRole;
     const enrollmentNumber = formData.get("enrollmentNumber") as string;
     const department = formData.get("department") as string;
 
+    console.log("Form data:", { email, hasPassword: !!password, name, role, isLogin });
+
     try {
-      // Validate role is selected for signup
-      if (!isLogin && !role) {
-        toast.error("Please select your role (Student or Faculty)");
+      // Validate required fields
+      if (!email || !password) {
+        toast.error("Please fill in all required fields");
         setLoading(false);
         return;
+      }
+
+      if (!isLogin) {
+        if (!name) {
+          toast.error("Please enter your name");
+          setLoading(false);
+          return;
+        }
+        
+        // Validate role is selected for signup
+        if (!role) {
+          toast.error("Please select your role (Student or Faculty)");
+          setLoading(false);
+          return;
+        }
+        
+        console.log("Signup attempt with role:", role);
       }
 
       if (isLogin) {
@@ -217,14 +247,27 @@ export default function Auth() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs value={isLogin ? "login" : "signup"} onValueChange={(v) => setIsLogin(v === "login")}>
+          <Tabs 
+            value={isLogin ? "login" : "signup"} 
+            onValueChange={(v) => {
+              setIsLogin(v === "login");
+              // Reset role selection when switching tabs
+              if (v === "signup") {
+                setSelectedRole("student");
+              }
+            }}
+          >
             <TabsList className="grid w-full grid-cols-2 mb-6">
               <TabsTrigger value="login">Login</TabsTrigger>
               <TabsTrigger value="signup">Sign Up</TabsTrigger>
             </TabsList>
             
             <TabsContent value="login">
-              <form onSubmit={handleAuth} className="space-y-4">
+              <form 
+                onSubmit={handleAuth} 
+                className="space-y-4"
+                id="login-form"
+              >
                 <div className="space-y-2">
                   <Label htmlFor="login-email">Email</Label>
                   <Input
@@ -252,7 +295,11 @@ export default function Auth() {
             </TabsContent>
 
             <TabsContent value="signup">
-              <form onSubmit={handleAuth} className="space-y-4">
+              <form 
+                onSubmit={handleAuth} 
+                className="space-y-4"
+                id="signup-form"
+              >
                 <div className="space-y-2">
                   <Label htmlFor="signup-name">Full Name</Label>
                   <Input
@@ -286,7 +333,19 @@ export default function Auth() {
                 </div>
                 <div className="space-y-2">
                   <Label>I am a</Label>
-                  <RadioGroup name="role" defaultValue="student" required>
+                  <RadioGroup 
+                    name="role" 
+                    value={selectedRole} 
+                    onValueChange={(value) => {
+                      setSelectedRole(value);
+                      // Also set it in a hidden input for form submission
+                      const hiddenInput = document.querySelector('input[name="role"]') as HTMLInputElement;
+                      if (hiddenInput) {
+                        hiddenInput.value = value;
+                      }
+                    }}
+                    required
+                  >
                     <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-accent transition-colors">
                       <RadioGroupItem value="student" id="student" />
                       <Label htmlFor="student" className="flex items-center gap-2 cursor-pointer flex-1">
@@ -302,6 +361,8 @@ export default function Auth() {
                       </Label>
                     </div>
                   </RadioGroup>
+                  {/* Hidden input to ensure role is submitted with form */}
+                  <input type="hidden" name="role" value={selectedRole} />
                 </div>
                 
                 <div id="student-fields" className="space-y-2">
