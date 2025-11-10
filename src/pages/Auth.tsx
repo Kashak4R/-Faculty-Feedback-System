@@ -17,21 +17,33 @@ export default function Auth() {
 
   useEffect(() => {
     const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        console.error("Session error:", sessionError);
+        return;
+      }
+      
       if (session) {
         // Get user role from profiles and redirect accordingly
-        const { data: profile } = await supabase
+        const { data: profile, error: profileError } = await supabase
           .from("profiles")
           .select("role")
           .eq("id", session.user.id)
           .single();
+        
+        if (profileError) {
+          console.error("Error fetching profile:", profileError);
+          return;
+        }
         
         if (profile?.role === "student") {
           navigate("/student-dashboard");
         } else if (profile?.role === "faculty") {
           navigate("/faculty-dashboard");
         } else {
-          navigate("/");
+          // User is logged in but has no role - stay on auth page
+          console.warn("User has no role assigned");
         }
       }
     };
@@ -69,22 +81,36 @@ export default function Auth() {
         // Get user role from profiles and redirect to appropriate dashboard
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
-          const { data: profile } = await supabase
+          // Wait a moment for session to be fully established
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          const { data: profile, error: profileError } = await supabase
             .from("profiles")
             .select("role")
             .eq("id", session.user.id)
             .single();
 
+          if (profileError) {
+            console.error("Error fetching profile:", profileError);
+            toast.error("Failed to load user profile. Please try again.");
+            setLoading(false);
+            return;
+          }
+
           if (profile?.role === "student") {
+            toast.success("Welcome back!");
             navigate("/student-dashboard");
           } else if (profile?.role === "faculty") {
+            toast.success("Welcome back!");
             navigate("/faculty-dashboard");
           } else {
+            console.warn("User profile found but no role assigned:", profile);
+            toast.error("Your account is missing a role. Please contact support.");
             navigate("/");
           }
+        } else {
+          toast.error("Failed to establish session. Please try again.");
         }
-        
-        toast.success("Welcome back!");
       } else {
         const { data, error } = await supabase.auth.signUp({
           email,
@@ -103,43 +129,69 @@ export default function Auth() {
         if (error) throw error;
 
         if (data.user) {
-          // Update profile with role (trigger should have created profile, but we ensure role is set)
-          const { error: profileError } = await supabase
+          // Wait a bit for the trigger to create the profile
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Try to update profile with role (trigger should have created profile)
+          const { error: updateError } = await supabase
             .from("profiles")
             .update({ role: role })
             .eq("id", data.user.id);
 
-          if (profileError) {
-            // If profile doesn't exist, create it with role
-            await supabase.from("profiles").insert({
+          if (updateError) {
+            // If update failed, try to insert (profile might not exist yet)
+            const { error: insertError } = await supabase.from("profiles").insert({
               id: data.user.id,
               name,
               email,
               role: role,
             });
+            
+            if (insertError) {
+              console.error("Failed to set profile role:", insertError);
+              // Try one more time to update in case it was created between attempts
+              await supabase
+                .from("profiles")
+                .update({ role: role })
+                .eq("id", data.user.id);
+            }
           }
 
           // Insert role-specific data
           if (role === "student") {
-            await supabase.from("students").insert({
+            const { error: studentError } = await supabase.from("students").insert({
               id: data.user.id,
               name,
               email,
               enrollment_number: enrollmentNumber,
             });
+            
+            if (studentError) {
+              console.error("Failed to create student record:", studentError);
+            }
 
             toast.success("Account created successfully!");
-            navigate("/student-dashboard");
+            // Wait a moment then redirect
+            setTimeout(() => {
+              navigate("/student-dashboard");
+            }, 500);
           } else if (role === "faculty") {
-            await supabase.from("faculty").insert({
+            const { error: facultyError } = await supabase.from("faculty").insert({
               id: data.user.id,
               name,
               email,
               department,
             });
+            
+            if (facultyError) {
+              console.error("Failed to create faculty record:", facultyError);
+            }
 
             toast.success("Account created successfully!");
-            navigate("/faculty-dashboard");
+            // Wait a moment then redirect
+            setTimeout(() => {
+              navigate("/faculty-dashboard");
+            }, 500);
           }
         }
       }

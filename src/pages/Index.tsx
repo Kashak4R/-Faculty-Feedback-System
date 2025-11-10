@@ -14,29 +14,49 @@ export default function Index() {
   }, []);
 
   const checkAuthAndRedirect = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (!session) {
-      setLoading(false);
-      return;
-    }
-
-    // Check user role from profiles
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", session.user.id)
-      .single();
-
-    if (profile?.role) {
-      if (profile.role === "student") {
-        navigate("/student-dashboard");
-      } else if (profile.role === "faculty") {
-        navigate("/faculty-dashboard");
+    try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        console.error("Session error:", sessionError);
+        setLoading(false);
+        return;
       }
+      
+      if (!session) {
+        setLoading(false);
+        return;
+      }
+
+      // Check user role from profiles
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", session.user.id)
+        .single();
+
+      if (profileError) {
+        console.error("Error fetching profile:", profileError);
+        setLoading(false);
+        return;
+      }
+
+      if (profile?.role) {
+        if (profile.role === "student") {
+          navigate("/student-dashboard");
+          return;
+        } else if (profile.role === "faculty") {
+          navigate("/faculty-dashboard");
+          return;
+        }
+      } else {
+        console.warn("User has no role assigned:", profile);
+      }
+    } catch (error) {
+      console.error("Error in checkAuthAndRedirect:", error);
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
   };
 
   if (loading) {
